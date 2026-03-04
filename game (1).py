@@ -229,6 +229,7 @@ def get_all_moves(board: np.ndarray, playing_white: bool):
 
 def is_check(cjsjcsc):
     # new _board = 
+    pass
 # ---------------------------------------------------------------------------
 # Board evaluation heuristic  (TODO: tune weights / add positional tables)
 # ---------------------------------------------------------------------------
