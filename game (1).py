@@ -339,13 +339,18 @@ BLACK_PST = {
 
 def evaluate(board: np.ndarray) -> float:
     """
-    Advanced static board evaluation from White's perspective.
+    Static board evaluation from White's perspective.
+    Positive  → advantage for White.  Negative → advantage for Black.
 
-    Components:
-      1. Material balance       — piece values summed with sign
-      2. Piece-square tables    — positional bonuses per piece/square
-      3. Mobility bonus         — reward having more legal moves
-      4. Pawn structure         — penalise doubled pawns
+    Components (all O(36) — no move generation, no recursion):
+      1. Material balance    — signed piece values
+      2. Piece-square tables — reward good squares per piece type
+      3. Doubled pawns       — penalty per extra pawn in same column
+
+    NOTE: Mobility is intentionally excluded here. Calling get_all_moves()
+    inside evaluate() would make every minimax leaf O(moves²), causing
+    exponential slowdown. The search itself already rewards mobility
+    implicitly (more moves = more branches = better scores bubble up).
     """
     score = 0.0
 
@@ -355,31 +360,24 @@ def evaluate(board: np.ndarray) -> float:
             if piece == EMPTY:
                 continue
 
-            # --- 1. Material ---
-            mat = PIECE_VALUES.get(piece, 0)
-            score += mat
+            # 1. Material
+            score += PIECE_VALUES.get(piece, 0)
 
-            # --- 2. Piece-square table bonus ---
+            # 2. Piece-square table
             if piece in WHITE_PST:
                 score += WHITE_PST[piece][row][col]
             elif piece in BLACK_PST:
-                score -= BLACK_PST[piece][row][col]  # subtract: black positional bonus harms white
+                score -= BLACK_PST[piece][row][col]
 
-    # --- 3. Mobility (number of pseudo-legal moves each side has) ---
-    white_mobility = len(get_all_moves(board, True))
-    black_mobility = len(get_all_moves(board, False))
-    MOBILITY_WEIGHT = 5  # centipawns per extra move
-    score += MOBILITY_WEIGHT * (white_mobility - black_mobility)
-
-    # --- 4. Doubled pawns penalty (same column, same colour) ---
+    # 3. Doubled-pawn penalty
     DOUBLED_PAWN_PENALTY = 20
     for col in range(BOARD_SIZE):
-        white_pawns_in_col = sum(1 for r in range(BOARD_SIZE) if board[r][col] == WHITE_PAWN)
-        black_pawns_in_col = sum(1 for r in range(BOARD_SIZE) if board[r][col] == BLACK_PAWN)
-        if white_pawns_in_col > 1:
-            score -= DOUBLED_PAWN_PENALTY * (white_pawns_in_col - 1)
-        if black_pawns_in_col > 1:
-            score += DOUBLED_PAWN_PENALTY * (black_pawns_in_col - 1)
+        wp = sum(1 for r in range(BOARD_SIZE) if board[r][col] == WHITE_PAWN)
+        bp = sum(1 for r in range(BOARD_SIZE) if board[r][col] == BLACK_PAWN)
+        if wp > 1:
+            score -= DOUBLED_PAWN_PENALTY * (wp - 1)
+        if bp > 1:
+            score += DOUBLED_PAWN_PENALTY * (bp - 1)
 
     return score
 
@@ -400,9 +398,7 @@ def apply_move(board: np.ndarray, move) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Format move string
 # ---------------------------------------------------------------------------
-
-def format_move(piece: int, src_row: int, src_col: int,
-                dst_row: int, dst_col: int) -> str:
+def format_move(piece: int, src_row: int, src_col: int, dst_row: int, dst_col: int) -> str:
     """Return move in required format: '<piece_id>:<source_cell>-><target_cell>'."""
     src_cell = idx_to_cell(src_row, src_col)
     dst_cell = idx_to_cell(dst_row, dst_col)
@@ -460,7 +456,7 @@ def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str
     Move string in the format '<piece_id>:<src_cell>-><dst_cell>', or
     None if no legal moves are available.
     """
-    depth = 2  # search depth (increase for stronger play, at cost of speed)
+    depth = 4  # search depth (increase for stronger play, at cost of speed)
 
     legal_moves = all_legal_moves(board, playing_white)
     if not legal_moves:
@@ -472,9 +468,7 @@ def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str
     for move in legal_moves:
         new_board = apply_move(board, move)
         # After our move the opponent plays, so flip is_maximising
-        score = minimax(new_board, depth - 1,
-                        float('-inf'), float('inf'),
-                        not playing_white)
+        score = minimax(new_board, depth - 1, float('-inf'), float('inf'), not playing_white)
         if playing_white and score > best_score:
             best_score = score
             best_move = move
