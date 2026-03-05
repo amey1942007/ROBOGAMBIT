@@ -227,35 +227,169 @@ def get_all_moves(board: np.ndarray, playing_white: bool):
                 moves.extend(gen(board,i,j,piece))
     return moves
 
-def is_check(cjsjcsc):
-    # new _board = 
-    pass
+def is_check(board,is_white_playing:bool=True):
+    # here we check which site our king is 
+    king_side = WHITE_KING if is_white_playing else BLACK_KING
+    found = False
+    for row in range(BOARD_SIZE):
+        for col in range(BOARD_SIZE):
+            if board[row][col] == king_side:
+                king_row, king_col = row, col
+                found = True
+                break
+        if found:
+            break
+
+    # King not on board so we consider as a check
+    if not found:
+        return True
+
+    enemy_moves = get_all_moves(board, not is_white_playing)
+    for move in enemy_moves:
+        if move[3] == king_row and move[4] == king_col:
+            return True
+    return False
+
+def all_legal_moves(board,is_white_playing):
+    legal = []
+    moves = get_all_moves(board,is_white_playing)
+    for move in moves:
+        new_board = apply_move(board,move)
+        if not is_check(new_board,is_white_playing):
+            legal.append(move)
+    return legal
 # ---------------------------------------------------------------------------
 # Board evaluation heuristic  (TODO: tune weights / add positional tables)
 # ---------------------------------------------------------------------------
 
 
 
+# ---------------------------------------------------------------------------
+# Piece-Square Tables (PSTs) — 6×6, from White's perspective.
+# Higher = better square for that piece type.
+# Black PSTs are the vertical mirror of White's.
+# ---------------------------------------------------------------------------
+
+# Pawns: reward advancement toward promotion
+_PAWN_PST = np.array([
+    [0,  0,  0,  0,  0,  0],   # row 0 — back rank (shouldn't be here)
+    [5,  5,  5,  5,  5,  5],   # row 1 — starting row  (slight bonus)
+    [10, 10, 15, 15, 10, 10],  # row 2
+    [20, 20, 25, 25, 20, 20],  # row 3 — good central advance
+    [35, 35, 40, 40, 35, 35],  # row 4 — near promotion
+    [50, 50, 50, 50, 50, 50],  # row 5 — promotion rank
+], dtype=float)
+
+# Knights: love the centre, hate edges
+_KNIGHT_PST = np.array([
+    [-20, -10,  0,  0, -10, -20],
+    [-10,   5, 10, 10,   5, -10],
+    [  0,  10, 20, 20,  10,   0],
+    [  0,  10, 20, 20,  10,   0],
+    [-10,   5, 10, 10,   5, -10],
+    [-20, -10,  0,  0, -10, -20],
+], dtype=float)
+
+# Bishops: reward diagonals and openness
+_BISHOP_PST = np.array([
+    [-10,  0,  0,  0,  0, -10],
+    [  0, 10, 10, 10, 10,   0],
+    [  0, 10, 15, 15, 10,   0],
+    [  0, 10, 15, 15, 10,   0],
+    [  0, 10, 10, 10, 10,   0],
+    [-10,  0,  0,  0,  0, -10],
+], dtype=float)
+
+# Queen: active centre, but not too early
+_QUEEN_PST = np.array([
+    [-10, -5,  0,  0, -5, -10],
+    [ -5,  5,  5,  5,  5,  -5],
+    [  0,  5, 10, 10,  5,   0],
+    [  0,  5, 10, 10,  5,   0],
+    [ -5,  5,  5,  5,  5,  -5],
+    [-10, -5,  0,  0, -5, -10],
+], dtype=float)
+
+# King: hide in the corner, penalise centre exposure
+_KING_PST = np.array([
+    [ 20, 25,  5,  5, 25,  20],
+    [ 15, 15, -5, -5, 15,  15],
+    [-10,-15,-20,-20,-15, -10],
+    [-20,-25,-30,-30,-25, -20],
+    [-30,-35,-40,-40,-35, -30],
+    [-40,-45,-50,-50,-45, -40],
+], dtype=float)
+
+WHITE_PST = {
+    WHITE_PAWN:   _PAWN_PST,
+    WHITE_KNIGHT: _KNIGHT_PST,
+    WHITE_BISHOP: _BISHOP_PST,
+    WHITE_QUEEN:  _QUEEN_PST,
+    WHITE_KING:   _KING_PST,
+}
+# Black PSTs are a vertical flip of White's
+BLACK_PST = {
+    BLACK_PAWN:   np.flipud(_PAWN_PST),
+    BLACK_KNIGHT: np.flipud(_KNIGHT_PST),
+    BLACK_BISHOP: np.flipud(_BISHOP_PST),
+    BLACK_QUEEN:  np.flipud(_QUEEN_PST),
+    BLACK_KING:   np.flipud(_KING_PST),
+}
+
+
 def evaluate(board: np.ndarray) -> float:
     """
-    Static board evaluation from White's perspective.
-    Positive  → advantage for White
-    Negative  → advantage for Black
-    TODO: Add mobility, piece-square tables, king safety, etc.
+    Advanced static board evaluation from White's perspective.
+
+    Components:
+      1. Material balance       — piece values summed with sign
+      2. Piece-square tables    — positional bonuses per piece/square
+      3. Mobility bonus         — reward having more legal moves
+      4. Pawn structure         — penalise doubled pawns
     """
     score = 0.0
+
     for row in range(BOARD_SIZE):
         for col in range(BOARD_SIZE):
             piece = board[row][col]
-            if piece != EMPTY:
-                score += PIECE_VALUES.get(piece, 0)
+            if piece == EMPTY:
+                continue
+
+            # --- 1. Material ---
+            mat = PIECE_VALUES.get(piece, 0)
+            score += mat
+
+            # --- 2. Piece-square table bonus ---
+            if piece in WHITE_PST:
+                score += WHITE_PST[piece][row][col]
+            elif piece in BLACK_PST:
+                score -= BLACK_PST[piece][row][col]  # subtract: black positional bonus harms white
+
+    # --- 3. Mobility (number of pseudo-legal moves each side has) ---
+    white_mobility = len(get_all_moves(board, True))
+    black_mobility = len(get_all_moves(board, False))
+    MOBILITY_WEIGHT = 5  # centipawns per extra move
+    score += MOBILITY_WEIGHT * (white_mobility - black_mobility)
+
+    # --- 4. Doubled pawns penalty (same column, same colour) ---
+    DOUBLED_PAWN_PENALTY = 20
+    for col in range(BOARD_SIZE):
+        white_pawns_in_col = sum(1 for r in range(BOARD_SIZE) if board[r][col] == WHITE_PAWN)
+        black_pawns_in_col = sum(1 for r in range(BOARD_SIZE) if board[r][col] == BLACK_PAWN)
+        if white_pawns_in_col > 1:
+            score -= DOUBLED_PAWN_PENALTY * (white_pawns_in_col - 1)
+        if black_pawns_in_col > 1:
+            score += DOUBLED_PAWN_PENALTY * (black_pawns_in_col - 1)
+
     return score
 
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 
-def apply_move(board: np.ndarray, piece, src_row, src_col, dst_row, dst_col) -> np.ndarray:
+def apply_move(board: np.ndarray, move) -> np.ndarray:
+    """Apply a move tuple (piece, src_row, src_col, dst_row, dst_col) to a copy of the board."""
+    piece, src_row, src_col, dst_row, dst_col = move
     new_board = board.copy()
     new_board[src_row][src_col] = EMPTY
     new_board[dst_row][dst_col] = piece
@@ -277,6 +411,39 @@ def format_move(piece: int, src_row: int, src_col: int,
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+def minimax(board, depth, alpha, beta, is_maximising):
+    if depth == 0:
+        return evaluate(board) 
+
+    if is_maximising:
+        best = float('-inf')
+        legal_moves = all_legal_moves(board, True)
+        # Case if there are no legal moves for white
+        if not legal_moves:
+            # Checkmate
+            return float('-inf') if is_check(board, True) else 0
+        for move in legal_moves:
+            score = minimax(apply_move(board, move), depth - 1, alpha, beta, False)
+            best = max(best, score)
+            alpha = max(alpha, score)
+            if beta <= alpha:
+                break
+        return best
+    else:
+        best = float('inf')
+        legal_moves = all_legal_moves(board, False)
+        # case if black has no moves
+        if not legal_moves:
+            return float('inf') if is_check(board, False) else 0 # 0 is for stalmate where its draw
+        for move in legal_moves:
+            score = minimax(apply_move(board, move), depth - 1, alpha, beta, True)
+            best = min(best, score)
+            beta = min(beta, score)
+            if beta <= alpha:
+                break
+        return best
+
+
 
 def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str]:
     """
@@ -293,8 +460,27 @@ def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str
     Move string in the format '<piece_id>:<src_cell>-><dst_cell>', or
     None if no legal moves are available.
     """
-    best_move = None
-    #implementation of get_best_move 
+    depth = 2  # search depth (increase for stronger play, at cost of speed)
+
+    legal_moves = all_legal_moves(board, playing_white)
+    if not legal_moves:
+        return None  # no legal moves — checkmate or stalemate
+        
+    best_move = legal_moves[0]
+    best_score = float('-inf') if playing_white else float('inf')
+
+    for move in legal_moves:
+        new_board = apply_move(board, move)
+        # After our move the opponent plays, so flip is_maximising
+        score = minimax(new_board, depth - 1,
+                        float('-inf'), float('inf'),
+                        not playing_white)
+        if playing_white and score > best_score:
+            best_score = score
+            best_move = move
+        elif not playing_white and score < best_score:
+            best_score = score
+            best_move = move
 
     return format_move(*best_move)
 
