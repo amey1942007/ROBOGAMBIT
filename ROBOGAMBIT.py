@@ -455,7 +455,7 @@ def quiescence(board, alpha, beta, is_maximising, qdepth=0):
     Prevents horizon effect — engine won't miss captures right after depth 0.
     qdepth cap prevents infinite recursion in long capture chains.
     """
-    if qdepth >= 4:
+    if qdepth >= 3:
         return evaluate(board)
 
     stand_pat = evaluate(board)
