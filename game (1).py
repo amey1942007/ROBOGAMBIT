@@ -97,39 +97,40 @@ def same_side(p1: int, p2: int) -> bool:
 # ---------------------------------------------------------------------------
 
 def get_pawn_moves(board: np.ndarray, row: int, col: int, piece: int):
-    """
-    White Pawns move downward (increasing row index).
-    Black Pawns move upward  (decreasing row index).
-    Captures are diagonal-forward.
-    
-    """
-    # lets create a pawn moves function which will return all the possible legal moves of the pawn on this current board as a list of tuples as pawn moves on in the rows so the column remains except in the case of captures where the column changes
     direction = 1 if is_white(piece) else -1
     moves = []
     start_row = 1 if is_white(piece) else 4
+    promotion_row = 5 if is_white(piece) else 0  # last rank
+
     new_row = row + direction
     new_col = col
-    # move one pos ahead
-    if in_bounds(new_row, new_col) and board[new_row][new_col] == EMPTY:
-        moves.append((piece,row,col,new_row, new_col))
-        # now check if the piece whether be white or black is it at the start_row or not if it is then direction +-2 is also permitted hence we check it
-        if row == start_row:
-            # if it is then we update the new_row + direction and then check if it is in bound and the place is empty or not if all satisfy then it is one the legal move so add it
-            new_row += direction
-            if in_bounds(new_row,new_col) and board[new_row][new_col] == EMPTY:
-                moves.append((piece,row,col,new_row,new_col))
 
-    #now lets check the capture case 
-    for i in [-1,1]:
-        new_row = row + direction
-        new_col = col + i
-        # now check if any other piece is there at the capture place or not and if it is in the bound or not 
-        if in_bounds(new_row,new_col) and board[new_row][new_col] != EMPTY and not same_side(piece,board[new_row][new_col]):
-            # we keep the in bound first as if it is out of bound then the board[...] will raise an error so by shortcutting we can break it 
-            moves.append((piece,row,col,new_row,new_col))
+    if in_bounds(new_row, new_col) and board[new_row][new_col] == EMPTY:
+        # check if landing on promotion row
+        if new_row == promotion_row:
+            promo_pieces = [WHITE_QUEEN, WHITE_BISHOP, WHITE_KNIGHT] if is_white(piece) else [BLACK_QUEEN, BLACK_BISHOP, BLACK_KNIGHT]
+            for promo in promo_pieces:
+                moves.append((piece, row, col, new_row, new_col, promo))
+        else:
+            moves.append((piece, row, col, new_row, new_col, None))
+            if row == start_row:
+                new_row2 = row + 2 * direction
+                if in_bounds(new_row2, new_col) and board[new_row2][new_col] == EMPTY:
+                    moves.append((piece, row, col, new_row2, new_col, None))
+
+    # diagonal captures
+    for i in [-1, 1]:
+        cap_row = row + direction
+        cap_col = col + i
+        if in_bounds(cap_row, cap_col) and board[cap_row][cap_col] != EMPTY and not same_side(piece, board[cap_row][cap_col]):
+            if cap_row == promotion_row:
+                promo_pieces = [WHITE_QUEEN, WHITE_BISHOP, WHITE_KNIGHT] if is_white(piece) else [BLACK_QUEEN, BLACK_BISHOP, BLACK_KNIGHT]
+                for promo in promo_pieces:
+                    moves.append((piece, row, col, cap_row, cap_col, promo))
+            else:
+                moves.append((piece, row, col, cap_row, cap_col, None))
 
     return moves
-
 
 def get_knight_moves(board: np.ndarray, row: int, col: int, piece: int):
     moves = []
@@ -386,38 +387,47 @@ def evaluate(board: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 
 def apply_move(board: np.ndarray, move) -> np.ndarray:
-    """Apply a move tuple (piece, src_row, src_col, dst_row, dst_col) to a copy of the board."""
-    piece, src_row, src_col, dst_row, dst_col = move
+    piece, src_row, src_col, dst_row, dst_col = move[0], move[1], move[2], move[3], move[4]
+    promotion = move[5] if len(move) > 5 else None
+
     new_board = board.copy()
     new_board[src_row][src_col] = EMPTY
-    new_board[dst_row][dst_col] = piece
+    # if promotion, place the new piece — otherwise place the pawn
+    new_board[dst_row][dst_col] = promotion if promotion is not None else piece
     return new_board
 
-
+def get_capture_moves(board: np.ndarray, playing_white: bool):
+    """Return only moves that capture an enemy piece."""
+    captures = []
+    for move in get_all_moves(board, playing_white):
+        dst_row, dst_col = move[3], move[4]
+        if board[dst_row][dst_col] != EMPTY:
+            captures.append(move)
+    return captures
 
 # ---------------------------------------------------------------------------
 # Format move string
 # ---------------------------------------------------------------------------
-def format_move(piece: int, src_row: int, src_col: int, dst_row: int, dst_col: int) -> str:
-    """Return move in required format: '<piece_id>:<source_cell>-><target_cell>'."""
+def format_move(piece: int, src_row: int, src_col: int, dst_row: int, dst_col: int, promotion=None) -> str:
     src_cell = idx_to_cell(src_row, src_col)
     dst_cell = idx_to_cell(dst_row, dst_col)
-    return f"{piece}:{src_cell}->{dst_cell}"
+    base = f"{piece}:{src_cell}->{dst_cell}"
+    if promotion is not None:
+        return f"{base}={promotion}"   # e.g. 1:B5->B6=4
+    return base
 
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 def minimax(board, depth, alpha, beta, is_maximising):
     if depth == 0:
-        return evaluate(board) 
+        return quiescence(board, alpha, beta, is_maximising)
 
     if is_maximising:
         best = float('-inf')
         legal_moves = all_legal_moves(board, True)
-        # Case if there are no legal moves for white
         if not legal_moves:
-            # Checkmate
-            return float('-inf') if is_check(board, True) else 0
+            return -99999 + (10 - depth) if is_check(board, True) else 0
         for move in legal_moves:
             score = minimax(apply_move(board, move), depth - 1, alpha, beta, False)
             best = max(best, score)
@@ -425,12 +435,12 @@ def minimax(board, depth, alpha, beta, is_maximising):
             if beta <= alpha:
                 break
         return best
+
     else:
         best = float('inf')
         legal_moves = all_legal_moves(board, False)
-        # case if black has no moves
         if not legal_moves:
-            return float('inf') if is_check(board, False) else 0 # 0 is for stalmate where its draw
+            return 99999 - (10 - depth) if is_check(board, False) else 0
         for move in legal_moves:
             score = minimax(apply_move(board, move), depth - 1, alpha, beta, True)
             best = min(best, score)
@@ -439,6 +449,42 @@ def minimax(board, depth, alpha, beta, is_maximising):
                 break
         return best
 
+def quiescence(board, alpha, beta, is_maximising, qdepth=0):
+    """
+    Extend search at leaf nodes by exploring captures only.
+    Prevents horizon effect — engine won't miss captures right after depth 0.
+    qdepth cap prevents infinite recursion in long capture chains.
+    """
+    if qdepth >= 4:
+        return evaluate(board)
+
+    stand_pat = evaluate(board)
+
+    if is_maximising:                                                       # for whites move
+        if stand_pat >= beta:
+            return beta
+        alpha = max(alpha, stand_pat)
+
+        for move in get_capture_moves(board, True):
+            new_board = apply_move(board, move)
+            score = quiescence(new_board, alpha, beta, False, qdepth + 1)
+            alpha = max(alpha, score)
+            if alpha >= beta:
+                break
+        return alpha
+
+    else:                                                                  # for blacks move
+        if stand_pat <= alpha:
+            return alpha
+        beta = min(beta, stand_pat)
+
+        for move in get_capture_moves(board, False):
+            new_board = apply_move(board, move)
+            score = quiescence(new_board, alpha, beta, True, qdepth + 1)
+            beta = min(beta, score)
+            if beta <= alpha:
+                break
+        return beta
 
 
 def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str]:
