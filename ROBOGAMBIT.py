@@ -397,9 +397,9 @@ def apply_move(board: np.ndarray, move) -> np.ndarray:
     return new_board
 
 def get_capture_moves(board: np.ndarray, playing_white: bool):
-    """Return only moves that capture an enemy piece."""
+    """Return only *legal* moves that capture an enemy piece."""
     captures = []
-    for move in get_all_moves(board, playing_white):
+    for move in all_legal_moves(board, playing_white):
         dst_row, dst_col = move[3], move[4]
         if board[dst_row][dst_col] != EMPTY:
             captures.append(move)

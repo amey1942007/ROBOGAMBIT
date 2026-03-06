@@ -24,7 +24,7 @@ try:
         EMPTY, BOARD_SIZE,
     )
 except ImportError:
-    print("❌  Cannot import game__1_.py — put it in the same folder.")
+    print("❌  Cannot import ROBOGAMBIT.py. Install numpy and keep this file in the same folder.")
     sys.exit(1)
 
 PIECE_NAMES = {
