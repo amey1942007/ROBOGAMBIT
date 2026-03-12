@@ -427,8 +427,8 @@ def minimax(board, depth, alpha, beta, is_maximising, history=()):
     state_key = get_board_state_key(board, is_maximising)
     
     # Check for threefold repetition penalty
-    # Require 1→2→1→2→1→2 pattern: position must occur 4 times (not 3) to count as draw.
-    if history.count(state_key) >= 3:
+    # If this position has already occurred twice in the history, this third time counts as a draw (0).
+    if history.count(state_key) >= 2:
         return 0
 
     if depth == 0:
