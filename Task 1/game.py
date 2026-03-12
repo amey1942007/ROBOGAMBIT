@@ -92,6 +92,10 @@ def is_black(piece: int) -> bool:
 def same_side(p1: int, p2: int) -> bool:
     return (is_white(p1) and is_white(p2)) or (is_black(p1) and is_black(p2))
 
+def get_board_state_key(board: np.ndarray, is_white_turn: bool) -> tuple:
+    """Return a hashable representation of the board state and whose turn it is."""
+    return (tuple(board.flatten()), is_white_turn)
+
 # ---------------------------------------------------------------------------
 # Move generation  
 # ---------------------------------------------------------------------------
@@ -419,9 +423,18 @@ def format_move(piece: int, src_row: int, src_col: int, dst_row: int, dst_col: i
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
-def minimax(board, depth, alpha, beta, is_maximising):
+def minimax(board, depth, alpha, beta, is_maximising, history=()):
+    state_key = get_board_state_key(board, is_maximising)
+    
+    # Check for threefold repetition penalty
+    # If this position has already occurred twice in the history, this third time counts as a draw (0).
+    if history.count(state_key) >= 2:
+        return 0
+
     if depth == 0:
         return quiescence(board, alpha, beta, is_maximising)
+
+    new_history = history + (state_key,)
 
     if is_maximising:
         best = float('-inf')
@@ -429,7 +442,7 @@ def minimax(board, depth, alpha, beta, is_maximising):
         if not legal_moves:
             return -99999 + (10 - depth) if is_check(board, True) else 0
         for move in legal_moves:
-            score = minimax(apply_move(board, move), depth - 1, alpha, beta, False)
+            score = minimax(apply_move(board, move), depth - 1, alpha, beta, False, new_history)
             best = max(best, score)
             alpha = max(alpha, score)
             if beta <= alpha:
@@ -442,7 +455,7 @@ def minimax(board, depth, alpha, beta, is_maximising):
         if not legal_moves:
             return 99999 - (10 - depth) if is_check(board, False) else 0
         for move in legal_moves:
-            score = minimax(apply_move(board, move), depth - 1, alpha, beta, True)
+            score = minimax(apply_move(board, move), depth - 1, alpha, beta, True, new_history)
             best = min(best, score)
             beta = min(beta, score)
             if beta <= alpha:
@@ -487,7 +500,7 @@ def quiescence(board, alpha, beta, is_maximising, qdepth=0):
         return beta
 
 
-def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str]:
+def get_best_move(board: np.ndarray, playing_white: bool = True, history=()) -> Optional[str]:
     """
     Given the current board state, return the best move string.
 
@@ -495,7 +508,7 @@ def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str
     ----------
     board        : 6×6 NumPy array representing the current game state.
     playing_white: True if the engine is playing as White, False for Black.
-   
+    history      : Tuple of board state keys (from get_board_state_key) to track repetitions.
 
     Returns
     -------
@@ -511,10 +524,14 @@ def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str
     best_move = legal_moves[0]
     best_score = float('-inf') if playing_white else float('inf')
 
+    # Add current state to history for the search
+    current_state_key = get_board_state_key(board, playing_white)
+    search_history = history + (current_state_key,)
+
     for move in legal_moves:
         new_board = apply_move(board, move)
         # After our move the opponent plays, so flip is_maximising
-        score = minimax(new_board, depth - 1, float('-inf'), float('inf'), not playing_white)
+        score = minimax(new_board, depth - 1, float('-inf'), float('inf'), not playing_white, search_history)
         if playing_white and score > best_score:
             best_score = score
             best_move = move
