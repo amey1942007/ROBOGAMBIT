@@ -82,8 +82,6 @@ class RoboGambit_Perception:
         # Preprocess image (Do not modify)
         undistorted_image, gray_image = self.prepare_image(image)
 
-        # TODO: Detect ArUco markers (uncomment or write your own code)
-
         # corners, ids, rejected = self.detector.detectMarkers(gray_image)
         # if ids is not None:
         #     cv2.aruco.drawDetectedMarkers(undistorted_image,corners,ids)
