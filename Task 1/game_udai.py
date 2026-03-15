@@ -278,23 +278,66 @@ def get_all_moves(board: np.ndarray, playing_white: bool):
 # ---------------------------------------------------------------------------
 # Check detection
 # ---------------------------------------------------------------------------
-
-def _is_check(board: np.ndarray, is_white_playing: bool) -> bool:
-    """Return True if the side's king is in check."""
-    king = WHITE_KING if is_white_playing else BLACK_KING
-    kr = kc = -1
-    for r in range(BOARD_SIZE):
-        for c in range(BOARD_SIZE):
-            if board[r, c] == king:
-                kr, kc = r, c
-                break
-        if kr != -1:
-            break
-    if kr == -1:
+def _is_check(board: np.ndarray, white: bool) -> bool:
+    king = WHITE_KING if white else BLACK_KING
+    pos = np.argwhere(board == king)
+    if len(pos) == 0:
         return True
-    for move in get_all_moves(board, not is_white_playing):
-        if move[3] == kr and move[4] == kc:
+
+    kr, kc = int(pos[0][0]), int(pos[0][1])
+
+    enemy_pawn = BLACK_PAWN if white else WHITE_PAWN
+    enemy_knight = BLACK_KNIGHT if white else WHITE_KNIGHT
+    enemy_bishop = BLACK_BISHOP if white else WHITE_BISHOP
+    enemy_queen = BLACK_QUEEN if white else WHITE_QUEEN
+    enemy_king = BLACK_KING if white else WHITE_KING
+
+    # Pawn attacks
+    pawn_dir = -1 if white else 1
+    for dc in (-1, 1):
+        r, c = kr + pawn_dir, kc + dc
+        if in_bounds(r, c) and board[r, c] == enemy_pawn:
             return True
+
+    # Knight attacks
+    for dr, dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
+        r, c = kr + dr, kc + dc
+        if in_bounds(r, c) and board[r, c] == enemy_knight:
+            return True
+
+    # King attacks
+    for dr in (-1,0,1):
+        for dc in (-1,0,1):
+            if dr == 0 and dc == 0:
+                continue
+            r, c = kr + dr, kc + dc
+            if in_bounds(r, c) and board[r, c] == enemy_king:
+                return True
+
+    # Bishop / Queen diagonals
+    for dr, dc in [(-1,-1),(-1,1),(1,-1),(1,1)]:
+        r, c = kr + dr, kc + dc
+        while in_bounds(r, c):
+            p = board[r, c]
+            if p != EMPTY:
+                if p == enemy_bishop or p == enemy_queen:
+                    return True
+                break
+            r += dr
+            c += dc
+
+    # Queen straight lines
+    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+        r, c = kr + dr, kc + dc
+        while in_bounds(r, c):
+            p = board[r, c]
+            if p != EMPTY:
+                if p == enemy_queen:
+                    return True
+                break
+            r += dr
+            c += dc
+
     return False
 
 # ---------------------------------------------------------------------------
