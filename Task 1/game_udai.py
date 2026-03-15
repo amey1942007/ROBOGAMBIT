@@ -169,8 +169,7 @@ def get_pawn_moves(board: np.ndarray, row: int, col: int, piece: int):
     direction   = 1 if is_white(piece) else -1
     start_row   = 1 if is_white(piece) else 4
     promo_row   = 5 if is_white(piece) else 0
-    promo_set   = [WHITE_QUEEN, WHITE_BISHOP, WHITE_KNIGHT] if is_white(piece) \
-                  else [BLACK_QUEEN, BLACK_BISHOP, BLACK_KNIGHT]
+    promo_set   = [WHITE_QUEEN] if is_white(piece) else [BLACK_QUEEN]
     moves = []
     nr, nc = row + direction, col
 
@@ -690,8 +689,22 @@ def _minimax(board: np.ndarray, depth: int,
         return _quiescence(board, alpha, beta, white, zh)
 
     moves = _legal_moves(board, white)
+
+# no legal moves -> either checkmate or stalemate
     if not moves:
-        return (-(99000 + depth)) if _is_check(board, white) else 0
+
+    # king is in check -> checkmate
+        if _is_check(board, white):
+            return -(99000 + depth)
+
+    # stalemate
+    # if the side to move is already winning, stalemate is bad
+        eval_score = evaluate(board)
+
+        if (white and eval_score > 0) or (not white and eval_score < 0):
+            return -50000   # avoid stalemate when winning
+        else:
+            return 50000    # prefer stalemate when losing
 
     moves = _order(board, moves, depth, tt_best)
 
@@ -775,7 +788,7 @@ def _minimax(board: np.ndarray, depth: int,
 # ---------------------------------------------------------------------------
 
 # Internal time budget per move (seconds). Aggressive: use full 2s.
-_TIME_LIMIT = 2.0
+_TIME_LIMIT = 10.0
 
 
 def get_best_move(board: np.ndarray, playing_white: bool = True) -> Optional[str]:
