@@ -345,7 +345,13 @@ def apply_move(board: np.ndarray, piece, src_row, src_col, dst_row, dst_col) -> 
     """Non-destructive move application (template-compatible signature)."""
     new_board = board.copy()
     new_board[src_row][src_col] = EMPTY
-    new_board[dst_row][dst_col] = piece
+    # Handle pawn promotion: auto-promote to queen on reaching the back rank
+    if piece == WHITE_PAWN and dst_row == 5:
+        new_board[dst_row][dst_col] = WHITE_QUEEN
+    elif piece == BLACK_PAWN and dst_row == 0:
+        new_board[dst_row][dst_col] = BLACK_QUEEN
+    else:
+        new_board[dst_row][dst_col] = piece
     return new_board
 
 # ---------------------------------------------------------------------------
@@ -573,7 +579,7 @@ def _quiescence(board: np.ndarray, alpha: float, beta: float,
         if qdepth >= 5:
             return stand_pat
         if stand_pat + DELTA < alpha:
-            return alpha
+            return stand_pat
         alpha = max(alpha, stand_pat)
         for move in _capture_moves(board, True):
             cap, placed, nzh = _make(board, move, zh)
@@ -589,7 +595,7 @@ def _quiescence(board: np.ndarray, alpha: float, beta: float,
         if qdepth >= 5:
             return stand_pat
         if stand_pat - DELTA > beta:
-            return beta
+            return stand_pat
         beta = min(beta, stand_pat)
         for move in _capture_moves(board, False):
             cap, placed, nzh = _make(board, move, zh)
@@ -817,9 +823,5 @@ if __name__ == "__main__":
     ], dtype=int)
 
     print("Board:\n", initial_board)
-    t0 = time.monotonic()
     move = get_best_move(initial_board, playing_white=True)
-    elapsed = time.monotonic() - t0
-    print(f"Best move for White : {move}")
-    print(f"Time used           : {elapsed:.3f}s")
-    print(f"Nodes searched      : {_nodes:,}")
+    print(move)
